@@ -1,0 +1,37 @@
+name: XmasChristmasParty
+main: org.xmas.java.XmasChristmasParty
+version: 1.0
+author: YourName
+description: 圣诞雪球大战插件（无需WorldEdit）
+# 移除depend: [WorldEdit]
+commands:
+  startxmas:
+    description: 启动雪球大战
+    usage: /<command>
+    permission: xmasparty.start
+    permission-message: §c你没有权限！
+  endxmas:
+    description: 结束雪球大战
+    usage: /<command>
+    permission: xmasparty.end
+    permission-message: §c你没有权限！
+  rescanchests:
+    description: 重新扫描箱子
+    usage: /<command>
+    permission: xmasparty.rescan
+    permission-message: §c你没有权限！
+permissions:
+  xmasparty.start:
+    description: 启动游戏
+    default: op
+  xmasparty.end:
+    description: 结束游戏
+    default: op
+  xmasparty.rescan:
+    description: 扫描箱子
+    default: op
+  xmasparty.*:
+    children:
+      xmasparty.start: true
+      xmasparty.end: true
+      xmasparty.rescan: true

@@ -29,13 +29,13 @@ import org.bukkit.scoreboard.ScoreboardManager;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
 
 /**
  * 圣诞雪球大战核心类 - 1.8.8兼容最终版
- * 功能：自动启动、10杀胜利、无范围挖雪、随机雪球刷新、防刷分
- * 作者：初开
+ * 修复：1. EnumTitleAction标题发送失败 2. Particle粒子类缺失
  */
 public class XmasSnowballFight implements Listener, CommandExecutor {
     private XmasChristmasParty mainPlugin;
@@ -47,27 +47,27 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
     private final List<Location> chestLocations = new ArrayList<>();
     private final Map<UUID, Integer> selfKillCount = new HashMap<>();
 
-    // 自动启动相关变量
-    private boolean autoStartPending = false; // 是否有自动启动倒计时
-    private int minPlayersForAutoStart = 2;   // 自动启动最小人数
-    private long autoStartDelay = 30 * 20L;   // 自动启动延迟（30秒=600ticks）
+    // 自动启动相关
+    private boolean autoStartPending = false;
+    private int minPlayersForAutoStart = 2;
+    private long autoStartDelay = 30 * 20L;
 
-    // 核心配置常量
+    // 核心配置
     private static final int MAX_GAME_HEALTH = 200;
     private static final double SNOWBALL_REAL_DAMAGE = 0.01;
     private static final int SNOWBALL_GAME_DAMAGE = 20;
     private static final String SCOREBOARD_TITLE = ChatColor.RED + "❄圣诞雪球大战❄";
-    private static final int WIN_KILLS = 10; // 胜利目标改为10杀
+    private static final int WIN_KILLS = 10;
 
-    // 雪球补给常量
+    // 补给常量
     private static final int SNOWBALL_SUPPLY_AMOUNT = 16;
     private static final long SNOWBALL_SUPPLY_INTERVAL = 200;
     private static final long CHEST_REFRESH_INTERVAL = 600;
     private static final int CHEST_SNOWBALL_MIN = 0;
     private static final int CHEST_SNOWBALL_MAX = 50;
-    private static final int GAME_REGION_RADIUS = 50; // 仅用于箱子扫描，不再限制挖雪
+    private static final int GAME_REGION_RADIUS = 50;
 
-    // 雪层挖掘常量
+    // 挖掘常量
     private static final int SNOW_BLOCK_DROP = 4;
     private static final int SNOW_LAYER_DROP = 1;
     private static final int MAX_SELF_KILL = 2;
@@ -98,12 +98,9 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
         scanChestLocations();
         startSnowballSupplyTask();
         startChestRefreshTask();
-        checkAutoStartConditions(); // 初始化时检查自动启动条件
+        checkAutoStartConditions();
     }
 
-    /**
-     * 扫描游戏区域内的箱子
-     */
     private void scanChestLocations() {
         chestLocations.clear();
         Location spawn = Bukkit.getWorld("world").getSpawnLocation();
@@ -123,29 +120,22 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
                 }
             }
         }
-        mainPlugin.getLogger().info("扫描到游戏区域内箱子数量：" + chestLocations.size());
+        mainPlugin.getLogger().info("扫描到箱子数量：" + chestLocations.size());
     }
 
-    /**
-     * 玩家物品栏雪球自动补给
-     */
     private void startSnowballSupplyTask() {
         new BukkitRunnable() {
             @Override
             public void run() {
                 if (!gameRunning) return;
                 for (Player player : Bukkit.getOnlinePlayers()) {
-                    // 移除区域限制，所有在线玩家都能获得补给
                     supplySnowballs(player);
                 }
             }
         }.runTaskTimer(mainPlugin, 0, SNOWBALL_SUPPLY_INTERVAL);
-        mainPlugin.getLogger().info("玩家雪球补给任务启动（每10秒一次）");
+        mainPlugin.getLogger().info("雪球补给任务启动");
     }
 
-    /**
-     * 箱子雪球刷新任务
-     */
     private void startChestRefreshTask() {
         new BukkitRunnable() {
             @Override
@@ -154,12 +144,9 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
                 refreshChestSnowballs();
             }
         }.runTaskTimer(mainPlugin, 0, CHEST_REFRESH_INTERVAL);
-        mainPlugin.getLogger().info("箱子雪球刷新任务启动（每30秒一次）");
+        mainPlugin.getLogger().info("箱子刷新任务启动");
     }
 
-    /**
-     * 为玩家补给雪球
-     */
     private void supplySnowballs(Player player) {
         try {
             int snowballCount = 0;
@@ -177,13 +164,10 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
                 }
             }
         } catch (Exception e) {
-            mainPlugin.getLogger().warning("玩家雪球补给失败：" + e.getMessage());
+            mainPlugin.getLogger().warning("补给失败：" + e.getMessage());
         }
     }
 
-    /**
-     * 刷新箱子中的雪球（随机0-50个）
-     */
     private void refreshChestSnowballs() {
         try {
             Random random = new Random();
@@ -212,54 +196,42 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
                 loc.getWorld().playSound(effectLoc, Sound.CHEST_OPEN, 0.8f, 1.0f);
                 loc.getWorld().playSound(effectLoc, Sound.STEP_SNOW, 0.8f, 1.0f);
             }
-            mainPlugin.getLogger().info("箱子雪球刷新完成，每个箱子随机生成0-50个雪球");
+            mainPlugin.getLogger().info("箱子刷新完成，随机生成0-50个雪球");
         } catch (Exception e) {
-            mainPlugin.getLogger().warning("箱子雪球刷新失败：" + e.getMessage());
+            mainPlugin.getLogger().warning("箱子刷新失败：" + e.getMessage());
         }
     }
 
-    /**
-     * 检查自动启动条件
-     */
     private void checkAutoStartConditions() {
-        // 如果游戏已运行或已有倒计时，直接返回
         if (gameRunning || autoStartPending) {
             return;
         }
 
-        // 获取在线玩家数量
         int onlinePlayers = Bukkit.getOnlinePlayers().size();
-
-        // 满足最小人数要求，启动倒计时
         if (onlinePlayers >= minPlayersForAutoStart) {
             autoStartPending = true;
             Bukkit.broadcastMessage("");
-            Bukkit.broadcastMessage(C_GOLD + "【雪球大战】满足自动启动条件（当前在线" + onlinePlayers + "人）！");
-            Bukkit.broadcastMessage(C_YELLOW + "将在30秒后自动启动游戏，最少保持2人在线！");
+            Bukkit.broadcastMessage(C_GOLD + "【雪球大战】满足启动条件（在线" + onlinePlayers + "人）！");
+            Bukkit.broadcastMessage(C_YELLOW + "30秒后自动启动，最少保持2人在线！");
             Bukkit.broadcastMessage("");
 
-            // 启动倒计时任务
             new BukkitRunnable() {
                 @Override
                 public void run() {
-                    // 再次检查人数，防止倒计时期间玩家离开
                     int currentPlayers = Bukkit.getOnlinePlayers().size();
                     if (currentPlayers >= minPlayersForAutoStart) {
-                        startGame(); // 自动启动游戏
+                        startGame();
                     } else {
                         Bukkit.broadcastMessage("");
-                        Bukkit.broadcastMessage(C_RED + "【雪球大战】在线人数不足（当前" + currentPlayers + "人），取消自动启动！");
+                        Bukkit.broadcastMessage(C_RED + "【雪球大战】人数不足，取消自动启动！");
                         Bukkit.broadcastMessage("");
                     }
-                    autoStartPending = false; // 重置倒计时状态
+                    autoStartPending = false;
                 }
             }.runTaskLater(mainPlugin, autoStartDelay);
         }
     }
 
-    /**
-     * 初始化玩家数据
-     */
     private void initPlayerData(Player player) {
         UUID uuid = player.getUniqueId();
         if (!killScoreManager.containsKey(uuid)) {
@@ -275,12 +247,9 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
         applySaturationBuff(player);
         giveSnowShovel(player);
 
-        mainPlugin.getLogger().info("初始化玩家数据：" + player.getName());
+        mainPlugin.getLogger().info("初始化玩家：" + player.getName());
     }
 
-    /**
-     * 发放圣诞铲子
-     */
     private void giveSnowShovel(Player player) {
         try {
             for (ItemStack item : player.getInventory().getContents()) {
@@ -300,15 +269,12 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
             shovel.setItemMeta(meta);
 
             player.getInventory().addItem(shovel);
-            player.sendMessage(C_GREEN + "获得圣诞铲子！可挖掘雪层获取雪球（无范围限制）");
+            player.sendMessage(C_GREEN + "获得圣诞铲子！挖雪无范围限制");
         } catch (Exception e) {
-            mainPlugin.getLogger().warning("发放铲子失败：" + e.getMessage());
+            mainPlugin.getLogger().warning("发铲子失败：" + e.getMessage());
         }
     }
 
-    /**
-     * 检查OP白名单
-     */
     private boolean isOpWhitelist(Player player) {
         for (String opId : OP_WHITELIST) {
             if (player.getName().equalsIgnoreCase(opId)) {
@@ -318,9 +284,6 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
         return player.isOp() || player.hasPermission("snowballfight.admin");
     }
 
-    /**
-     * 给玩家添加饱食Buff
-     */
     private void applySaturationBuff(Player player) {
         try {
             if (player.hasPotionEffect(PotionEffectType.SATURATION)) {
@@ -330,13 +293,10 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
             player.setFoodLevel(20);
             player.setSaturation(10.0F);
         } catch (Exception e) {
-            mainPlugin.getLogger().warning("添加饱食Buff失败：" + e.getMessage());
+            mainPlugin.getLogger().warning("加Buff失败：" + e.getMessage());
         }
     }
 
-    /**
-     * 创建玩家计分板
-     */
     private void createPlayerScoreboard(Player player) {
         try {
             UUID uuid = player.getUniqueId();
@@ -375,27 +335,21 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
             player.setScoreboard(scoreboard);
 
         } catch (Exception e) {
-            mainPlugin.getLogger().severe("创建计分板失败：" + e.getMessage());
-            player.sendMessage(C_RED + "计分板加载失败，请重新加入游戏！");
+            mainPlugin.getLogger().severe("创计分板失败：" + e.getMessage());
+            player.sendMessage(C_RED + "计分板加载失败，请重进！");
         }
     }
 
-    /**
-     * 清空计分板
-     */
     private void clearScoreboard(Scoreboard scoreboard) {
         try {
             for (String entry : scoreboard.getEntries()) {
                 scoreboard.resetScores(entry);
             }
         } catch (Exception e) {
-            mainPlugin.getLogger().warning("清空计分板失败：" + e.getMessage());
+            mainPlugin.getLogger().warning("清计分板失败：" + e.getMessage());
         }
     }
 
-    /**
-     * 添加计分板行
-     */
     private void addScoreboardLine(Objective objective, String text, int score) {
         try {
             Score line = objective.getScore(text);
@@ -404,13 +358,10 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
             }
             line.setScore(score);
         } catch (Exception e) {
-            mainPlugin.getLogger().warning("添加计分板行失败：" + e.getMessage());
+            mainPlugin.getLogger().warning("加计分板行失败：" + e.getMessage());
         }
     }
 
-    /**
-     * 更新玩家计分板
-     */
     private void updatePlayerScoreboard(Player player) {
         try {
             UUID uuid = player.getUniqueId();
@@ -438,29 +389,20 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
             addScoreboardLine(objective, C_GREEN + getPlayerHealth(player) + "/" + MAX_GAME_HEALTH, 2);
 
         } catch (Exception e) {
-            mainPlugin.getLogger().warning("更新计分板失败：" + e.getMessage());
+            mainPlugin.getLogger().warning("更计分板失败：" + e.getMessage());
         }
     }
 
-    /**
-     * 全局刷新计分板
-     */
     public void refreshGlobalScoreboard() {
         for (Player player : Bukkit.getOnlinePlayers()) {
             updatePlayerScoreboard(player);
         }
     }
 
-    /**
-     * 获取玩家击杀数
-     */
     private int getKillScore(Player player) {
         return killScoreManager.getOrDefault(player.getUniqueId(), 0);
     }
 
-    /**
-     * 增加玩家击杀数（防刷分逻辑）
-     */
     private void addKillScore(Player player, Player victim) {
         UUID killerUuid = player.getUniqueId();
         UUID victimUuid = victim.getUniqueId();
@@ -471,17 +413,17 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
 
             if (count == 1) {
                 player.sendMessage("");
-                player.sendMessage(C_YELLOW + "⚠️ 警告：你击杀了自己！累计自杀1次，超过2次将清空积分！");
+                player.sendMessage(C_YELLOW + "⚠️ 警告：自杀1次，超2次清空积分！");
                 player.sendMessage("");
             } else if (count == MAX_SELF_KILL) {
                 player.sendMessage("");
-                player.sendMessage(C_RED + "⚠️ 严重警告：你已累计自杀2次！再次自杀将清空所有击杀积分！");
+                player.sendMessage(C_RED + "⚠️ 严重警告：自杀2次，再自杀清空积分！");
                 player.sendMessage("");
             } else if (count > MAX_SELF_KILL) {
                 killScoreManager.put(killerUuid, 0);
                 selfKillCount.put(killerUuid, 0);
                 player.sendMessage("");
-                player.sendMessage(C_RED + C_BOLD + "❌ 惩罚：你累计自杀超过2次，击杀积分已被清空！");
+                player.sendMessage(C_RED + C_BOLD + "❌ 惩罚：自杀超2次，积分清空！");
                 player.sendMessage("");
                 sendTitle(player, C_RED + "积分清空", C_WHITE + "禁止刷分！", 0, 30, 10);
             }
@@ -493,16 +435,11 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
         updatePlayerScoreboard(player);
     }
 
-    /**
-     * 获取玩家血量
-     */
     private int getPlayerHealth(Player player) {
         return playerGameHealth.getOrDefault(player.getUniqueId(), MAX_GAME_HEALTH);
     }
 
-    /**
-     * 发送标题信息
-     */
+    // 修复1.8.8标题发送bug
     private void sendTitle(Player player, String title, String subtitle, int fadeIn, int stay, int fadeOut) {
         try {
             String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
@@ -511,6 +448,12 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
             Class<?> packetClass = Class.forName("net.minecraft.server." + version + ".Packet");
             Class<?> enumTitleActionClass = Class.forName("net.minecraft.server." + version + ".EnumTitleAction");
             Class<?> chatSerializerClass = Class.forName("net.minecraft.server." + version + ".IChatBaseComponent$ChatSerializer");
+
+            // 反射获取枚举实例
+            Field titleField = enumTitleActionClass.getField("TITLE");
+            Field subtitleField = enumTitleActionClass.getField("SUBTITLE");
+            Object titleAction = titleField.get(null);
+            Object subtitleAction = subtitleField.get(null);
 
             Object craftPlayer = craftPlayerClass.cast(player);
             Method getHandleMethod = craftPlayerClass.getMethod("getHandle");
@@ -522,39 +465,44 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
 
             String titleJson = "{\"text\":\"" + title.replace("§", "\\u00a7") + "\"}";
             String subtitleJson = "{\"text\":\"" + subtitle.replace("§", "\\u00a7") + "\"}";
-
             Method aMethod = chatSerializerClass.getMethod("a", String.class);
             Object titleComponent = aMethod.invoke(null, titleJson);
             Object subtitleComponent = aMethod.invoke(null, subtitleJson);
 
             Constructor<?> titlePacketConstructor = packetPlayOutTitleClass.getConstructor(enumTitleActionClass, chatSerializerClass.getDeclaringClass(), int.class, int.class, int.class);
-            Object titlePacket = titlePacketConstructor.newInstance(
-                    enumTitleActionClass.getEnumConstants()[0],
-                    titleComponent,
-                    fadeIn,
-                    stay,
-                    fadeOut
-            );
+            Object titlePacket = titlePacketConstructor.newInstance(titleAction, titleComponent, fadeIn, stay, fadeOut);
             sendPacketMethod.invoke(playerConnection, titlePacket);
 
-            Object subtitlePacket = titlePacketConstructor.newInstance(
-                    enumTitleActionClass.getEnumConstants()[1],
-                    subtitleComponent,
-                    fadeIn,
-                    stay,
-                    fadeOut
-            );
+            Object subtitlePacket = titlePacketConstructor.newInstance(subtitleAction, subtitleComponent, fadeIn, stay, fadeOut);
             sendPacketMethod.invoke(playerConnection, subtitlePacket);
 
         } catch (Exception e) {
-            mainPlugin.getLogger().warning("发送标题失败：" + e.getMessage());
+            mainPlugin.getLogger().warning("发标题失败：" + e.getMessage());
             player.sendMessage(C_BOLD + title + C_WHITE + " " + subtitle);
         }
     }
 
-    /**
-     * 扣除玩家血量
-     */
+    // 1.8.8粒子效果工具方法（修复Particle类缺失）
+    private void spawnParticle1_8_8(World world, String particleType, Location loc, int count, double offsetX, double offsetY, double offsetZ, double speed) {
+        try {
+            String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
+            Class<?> enumParticle = Class.forName("net.minecraft.server." + version + ".EnumParticle");
+            Class<?> craftWorld = Class.forName("org.bukkit.craftbukkit." + version + ".CraftWorld");
+            Class<?> worldServer = Class.forName("net.minecraft.server." + version + ".WorldServer");
+
+            // 获取粒子枚举
+            Object particle = enumParticle.getField(particleType.toUpperCase()).get(null);
+            Object nmsWorld = craftWorld.getMethod("getHandle").invoke(world);
+
+            // 调用粒子发送方法
+            Method spawnParticle = worldServer.getMethod("a", enumParticle, boolean.class, double.class, double.class, double.class, int.class, double.class, double.class, double.class, double.class);
+            spawnParticle.invoke(nmsWorld, particle, true, loc.getX(), loc.getY(), loc.getZ(), count, offsetX, offsetY, offsetZ, speed);
+        } catch (Exception e) {
+            // 失败则用雪花效果替代
+            world.playEffect(loc, Effect.SNOWBALL_BREAK, 0);
+        }
+    }
+
     private void deductGameHealth(Player player, int damage, Player attacker) {
         try {
             UUID uuid = player.getUniqueId();
@@ -582,25 +530,32 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
                 eliminatePlayer(player, attacker);
             }
         } catch (Exception e) {
-            mainPlugin.getLogger().warning("扣除血量失败：" + e.getMessage());
-            player.sendMessage(C_RED + "受到攻击时发生错误！");
-            attacker.sendMessage(C_YELLOW + "攻击目标时发生错误！");
+            mainPlugin.getLogger().warning("扣血失败：" + e.getMessage());
+            player.sendMessage(C_RED + "受攻击时出错！");
+            attacker.sendMessage(C_YELLOW + "攻击时出错！");
         }
     }
 
-    /**
-     * 淘汰玩家
-     */
+    // 修复复活旁观者+粒子效果
+    // 修复复活旁观者+粒子效果+复活点回传
     private void eliminatePlayer(Player victim, Player killer) {
         try {
             victim.sendMessage("");
             victim.sendMessage(C_RED + C_BOLD + "❌ 你被淘汰了！");
             victim.sendMessage(C_WHITE + "击杀者：" + C_GOLD + killer.getName());
-            victim.sendMessage(C_YELLOW + "3秒后自动复活");
+            victim.sendMessage(C_YELLOW + "3秒后复活（旁观者模式免疫伤害）");
             victim.sendMessage("");
             sendTitle(victim, C_RED + "被淘汰！", C_WHITE + "3秒后复活", 0, 40, 10);
 
-            victim.teleport(Bukkit.getWorld("world").getSpawnLocation());
+            // 关键：记录玩家的重生点（优先使用床的重生点，无则用世界出生点）
+            Location spawnLoc = victim.getBedSpawnLocation() != null ? victim.getBedSpawnLocation() : Bukkit.getWorld("world").getSpawnLocation();
+            // 如果需要强制固定世界出生点，直接用这行：
+            // Location spawnLoc = Bukkit.getWorld("world").getSpawnLocation();
+
+            // 设置旁观者模式防秒杀
+            victim.setGameMode(GameMode.SPECTATOR);
+            // 可选：旁观者模式也传送到重生点（如果需要）
+            // victim.teleport(spawnLoc);
 
             addKillScore(killer, victim);
 
@@ -612,7 +567,7 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
 
             if (getKillScore(killer) % 5 == 0) {
                 Bukkit.broadcastMessage("");
-                Bukkit.broadcastMessage(C_GOLD + "【雪球大战】" + C_AQUA + killer.getName() + C_WHITE + " 已拿下 " + C_RED + getKillScore(killer) + C_WHITE + " 杀！");
+                Bukkit.broadcastMessage(C_GOLD + "【雪球大战】" + C_AQUA + killer.getName() + C_WHITE + " 拿下 " + C_RED + getKillScore(killer) + C_WHITE + " 杀！");
                 Bukkit.broadcastMessage("");
             }
 
@@ -622,6 +577,9 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
 
             Bukkit.getScheduler().runTaskLater(mainPlugin, () -> {
                 if (victim.isOnline()) {
+                    // 恢复生存模式+强制传送到记录的重生点
+                    victim.setGameMode(GameMode.SURVIVAL);
+                    victim.teleport(spawnLoc); // 核心修复：强制传送到重生点
                     playerGameHealth.put(victim.getUniqueId(), MAX_GAME_HEALTH);
                     updatePlayerScoreboard(victim);
                     victim.sendMessage("");
@@ -629,6 +587,8 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
                     victim.sendMessage(C_WHITE + "继续战斗吧！");
                     victim.sendMessage("");
                     sendTitle(victim, C_GREEN + "复活成功！", "", 0, 20, 0);
+                    // 调用1.8.8粒子方法
+                    spawnParticle1_8_8(victim.getWorld(), "HEART", victim.getLocation().add(0,1,0), 30, 0.5, 0.5, 0.5, 0.1);
                 }
             }, 60);
         } catch (Exception e) {
@@ -636,9 +596,6 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
         }
     }
 
-    /**
-     * 开始游戏
-     */
     private void startGame() {
         gameRunning = true;
         scanChestLocations();
@@ -650,22 +607,19 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
             updatePlayerScoreboard(player);
             player.sendMessage("");
             player.sendMessage(C_GOLD + C_BOLD + "🎄 圣诞雪球大战开始！");
-            player.sendMessage(C_WHITE + "击杀 " + C_RED + WIN_KILLS + C_WHITE + " 名玩家即可获胜！");
-            player.sendMessage(C_YELLOW + "雪球伤害：20点/次 | 总血量：200点 | 铲子挖雪无范围限制 | 箱子每30秒刷新0-50个雪球");
-            player.sendMessage(C_RED + "注意：自杀超过2次将清空击杀积分！");
+            player.sendMessage(C_WHITE + "击杀 " + C_RED + WIN_KILLS + C_WHITE + " 人获胜！");
+            player.sendMessage(C_YELLOW + "雪球伤害20点/次 | 血量200点 | 挖雪无范围限制 | 箱子30秒刷0-50雪球");
+            player.sendMessage(C_RED + "注意：自杀超2次清空积分！复活时免疫伤害~");
             player.sendMessage("");
             sendTitle(player, C_GOLD + "游戏开始！", C_WHITE + "击杀" + WIN_KILLS + "人获胜", 0, 60, 20);
         }
 
         Bukkit.broadcastMessage("");
-        Bukkit.broadcastMessage(C_GOLD + "【雪球大战】游戏开始！箱子每30秒刷新0-50个雪球，10杀获胜！");
-        Bukkit.broadcastMessage(C_RED + "防刷分机制：自杀超过2次将清空积分！");
+        Bukkit.broadcastMessage(C_GOLD + "【雪球大战】开始！10杀获胜，箱子30秒刷0-50雪球！");
+        Bukkit.broadcastMessage(C_RED + "防刷分：自杀超2次清空积分，复活免疫伤害~");
         Bukkit.broadcastMessage("");
     }
 
-    /**
-     * 结束游戏
-     */
     private void endGame(Player winner) {
         gameRunning = false;
 
@@ -679,16 +633,12 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
         }
 
         Bukkit.broadcastMessage("");
-        Bukkit.broadcastMessage(C_GOLD + "【雪球大战】" + C_AQUA + winner.getName() + C_WHITE + " 获得胜利！最终击杀数：" + C_RED + getKillScore(winner));
+        Bukkit.broadcastMessage(C_GOLD + "【雪球大战】" + C_AQUA + winner.getName() + C_WHITE + " 胜利！击杀数：" + C_RED + getKillScore(winner));
         Bukkit.broadcastMessage("");
 
-        // 游戏结束后重新检查自动启动条件
         Bukkit.getScheduler().runTaskLater(mainPlugin, this::checkAutoStartConditions, 5 * 20L);
     }
 
-    /**
-     * 停止游戏
-     */
     private void stopGame() {
         gameRunning = false;
 
@@ -700,20 +650,16 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
         }
 
         Bukkit.broadcastMessage("");
-        Bukkit.broadcastMessage(C_GOLD + "【雪球大战】游戏已被管理员停止！");
+        Bukkit.broadcastMessage(C_GOLD + "【雪球大战】已被管理员停止！");
         Bukkit.broadcastMessage("");
 
-        // 停止后重新检查自动启动条件
         checkAutoStartConditions();
     }
 
-    /**
-     * 命令处理
-     */
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         try {
             if (!(sender instanceof Player) && !sender.isOp()) {
-                sender.sendMessage(C_RED + "只有玩家或管理员可以使用此命令！");
+                sender.sendMessage(C_RED + "只有玩家/管理员可用此命令！");
                 return true;
             }
 
@@ -727,27 +673,27 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
             switch (args[0].toLowerCase()) {
                 case "start":
                     if (gameRunning) {
-                        sender.sendMessage(C_YELLOW + "雪球大战已经在运行中了！");
+                        sender.sendMessage(C_YELLOW + "游戏已在运行！");
                         return true;
                     }
                     if (isOpWhitelist(player) || sender.isOp()) {
                         startGame();
-                        sender.sendMessage(C_GREEN + "雪球大战已启动！");
+                        sender.sendMessage(C_GREEN + "游戏启动！");
                     } else {
-                        sender.sendMessage(C_RED + "你没有权限执行此命令！");
+                        sender.sendMessage(C_RED + "无权限！");
                     }
                     break;
 
                 case "stop":
                     if (!gameRunning) {
-                        sender.sendMessage(C_YELLOW + "雪球大战尚未开始！");
+                        sender.sendMessage(C_YELLOW + "游戏尚未开始！");
                         return true;
                     }
                     if (isOpWhitelist(player) || sender.isOp()) {
                         stopGame();
-                        sender.sendMessage(C_GREEN + "雪球大战已停止！");
+                        sender.sendMessage(C_GREEN + "游戏停止！");
                     } else {
-                        sender.sendMessage(C_RED + "你没有权限执行此命令！");
+                        sender.sendMessage(C_RED + "无权限！");
                     }
                     break;
 
@@ -771,33 +717,27 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
                     break;
 
                 default:
-                    sender.sendMessage(C_RED + "未知命令！使用 /snowballfight help 查看帮助");
+                    sender.sendMessage(C_RED + "未知命令！用 /snowballfight help 查看帮助");
                     break;
             }
         } catch (Exception e) {
             mainPlugin.getLogger().severe("命令执行失败：" + e.getMessage());
-            sender.sendMessage(C_RED + "命令执行出错：" + e.getMessage());
+            sender.sendMessage(C_RED + "命令出错：" + e.getMessage());
         }
         return true;
     }
 
-    /**
-     * 发送命令帮助
-     */
     private void sendCommandHelp(CommandSender sender) {
         sender.sendMessage("");
         sender.sendMessage(C_GOLD + C_BOLD + "雪球大战命令帮助");
         sender.sendMessage(C_WHITE + "/snowballfight start - 启动游戏（管理员）");
         sender.sendMessage(C_WHITE + "/snowballfight stop - 停止游戏（管理员）");
-        sender.sendMessage(C_WHITE + "/snowballfight status - 查看游戏状态");
-        sender.sendMessage(C_WHITE + "/snowballfight help - 查看此帮助");
-        sender.sendMessage(C_RED + "注意：自杀超过2次将清空击杀积分，游戏会自动启动（至少2人）！");
+        sender.sendMessage(C_WHITE + "/snowballfight status - 查看状态");
+        sender.sendMessage(C_WHITE + "/snowballfight help - 查看帮助");
+        sender.sendMessage(C_RED + "注意：自杀超2次清空积分，2人在线自动启动！复活免疫伤害~");
         sender.sendMessage("");
     }
 
-    /**
-     * 玩家加入事件（触发自动启动检查）
-     */
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent e) {
         Player player = e.getPlayer();
@@ -805,49 +745,39 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
         if (gameRunning) {
             player.sendMessage("");
             player.sendMessage(C_GOLD + "【雪球大战】欢迎加入正在进行的游戏！");
-            player.sendMessage(C_YELLOW + "雪球伤害：20点/次 | 你的血量：200点 | 箱子每30秒刷新0-50个雪球");
-            player.sendMessage(C_RED + "防刷分：自杀超过2次将清空积分！");
+            player.sendMessage(C_YELLOW + "雪球伤害20点/次 | 血量200点 | 箱子30秒刷0-50雪球");
+            player.sendMessage(C_RED + "防刷分：自杀超2次清空积分！复活时免疫伤害~");
             player.sendMessage(C_WHITE + "当前击杀数：" + C_YELLOW + getKillScore(player));
             player.sendMessage("");
         }
 
-        // 玩家加入后检查自动启动条件
         checkAutoStartConditions();
     }
 
-    /**
-     * 玩家退出事件（如果人数不足，取消自动启动）
-     */
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent e) {
         Player player = e.getPlayer();
         if (gameRunning) {
-            Bukkit.broadcastMessage(C_YELLOW + "【雪球大战】" + player.getName() + " 退出了游戏！");
+            Bukkit.broadcastMessage(C_YELLOW + "【雪球大战】" + player.getName() + " 退出游戏！");
 
-            // 游戏中如果剩余玩家不足2人，结束游戏
             if (Bukkit.getOnlinePlayers().size() < 2) {
                 Bukkit.broadcastMessage("");
-                Bukkit.broadcastMessage(C_RED + "【雪球大战】在线玩家不足2人，游戏结束！");
+                Bukkit.broadcastMessage(C_RED + "【雪球大战】人数不足2人，游戏结束！");
                 Bukkit.broadcastMessage("");
                 gameRunning = false;
 
-                // 结束后重新检查自动启动条件
                 checkAutoStartConditions();
             }
         } else if (autoStartPending) {
-            // 如果有自动启动倒计时，检查人数
             if (Bukkit.getOnlinePlayers().size() < minPlayersForAutoStart) {
                 Bukkit.broadcastMessage("");
-                Bukkit.broadcastMessage(C_RED + "【雪球大战】在线人数不足，取消自动启动倒计时！");
+                Bukkit.broadcastMessage(C_RED + "【雪球大战】人数不足，取消自动启动！");
                 Bukkit.broadcastMessage("");
                 autoStartPending = false;
             }
         }
     }
 
-    /**
-     * 雪球击中事件
-     */
     @EventHandler
     public void onSnowballHit(EntityDamageByEntityEvent e) {
         try {
@@ -871,21 +801,18 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
         }
     }
 
-    /**
-     * 方块挖掘事件（移除挖雪范围限制，禁止非OP挖掘基础方块）
-     */
     @EventHandler
     public void onSnowBreak(BlockBreakEvent e) {
         Player player = e.getPlayer();
         Block block = e.getBlock();
         Material blockType = block.getType();
 
-        // 禁止非OP挖掘基础方块
+        // 禁止非OP挖基础方块
         if (blockType == Material.GRASS || blockType == Material.DIRT || blockType == Material.STONE ||
                 blockType == Material.WOOD || blockType == Material.LEAVES || blockType == Material.LOG) {
             if (!isOpWhitelist(player)) {
                 e.setCancelled(true);
-                player.sendMessage(C_RED + "雪球大战期间禁止挖掘基础方块（仅允许OP）！");
+                player.sendMessage(C_RED + "雪球大战期间禁止挖基础方块（仅OP可挖）！");
                 return;
             }
         }
@@ -910,29 +837,26 @@ public class XmasSnowballFight implements Listener, CommandExecutor {
         ItemStack handItem = player.getItemInHand();
         if (handItem == null || handItem.getType() != Material.DIAMOND_SPADE || !handItem.hasItemMeta()) {
             e.setCancelled(true);
-            player.sendMessage(C_RED + "只有使用圣诞铲子才能挖掘雪层！");
+            player.sendMessage(C_RED + "只有圣诞铲子能挖雪！");
             return;
         }
 
         ItemMeta meta = handItem.getItemMeta();
         if (!meta.hasDisplayName() || !meta.getDisplayName().contains("圣诞铲子")) {
             e.setCancelled(true);
-            player.sendMessage(C_RED + "只有使用圣诞铲子才能挖掘雪层！");
+            player.sendMessage(C_RED + "只有圣诞铲子能挖雪！");
             return;
         }
 
-        // 移除区域限制，允许在任何地方挖雪
+        // 无范围限制挖雪
         e.setCancelled(false);
         int dropAmount = (blockType == Material.SNOW_BLOCK) ? SNOW_BLOCK_DROP : SNOW_LAYER_DROP;
         block.getWorld().dropItemNaturally(block.getLocation(), new ItemStack(Material.SNOW_BALL, dropAmount));
         block.setType(Material.AIR);
         player.playSound(block.getLocation(), Sound.DIG_SNOW, 1.0f, 1.0f);
-        player.sendMessage(C_GREEN + "挖掘" + (blockType == Material.SNOW_BLOCK ? "雪块" : "雪层") + "获得了" + dropAmount + "个雪球！");
+        player.sendMessage(C_GREEN + "挖掘" + (blockType == Material.SNOW_BLOCK ? "雪块" : "雪层") + "获得" + dropAmount + "个雪球！");
     }
 
-    /**
-     * 方块放置事件
-     */
     @EventHandler
     public void onBlockPlace(BlockPlaceEvent e) {
         Player player = e.getPlayer();
